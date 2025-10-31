@@ -15,6 +15,7 @@
                 "-fansi-escape-codes",
                 "-g",
                 "${file}",
+                "${workspaceFolder}/include/*.cpp",
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}",
             ],

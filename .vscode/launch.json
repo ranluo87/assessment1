@@ -5,7 +5,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": ["--query-file", "../q1.json", "--result-file", "q1_result.txt"],
+            "args": ["--query-file", "../q1.json", "--result-file", "../q1_result.txt"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

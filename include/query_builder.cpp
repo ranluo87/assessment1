@@ -1,6 +1,7 @@
 #include "query_builder.hpp"
 #include <sstream>
 #include <algorithm>
+#include <iostream>
 
 std::set<int64_t> QueryBuilder::get_proper_groups() {
     std::set<int64_t> proper;
@@ -25,58 +26,50 @@ std::set<int64_t> QueryBuilder::get_proper_groups() {
     for (const auto& row : r) {
         proper.insert(row[0].as<int64_t>());
     }
+    return proper;
 }
 
 std::set<Point2D> QueryBuilder::exec_crop(const CropQuery& q) {
     std::ostringstream sql;
-    sql << "SELECT coord_x, coord_y FROM inspection_region WHERE ";
-    std::vector<std::string> conditions;
-    std::vector<pqxx::params> params;
+    sql << "SELECT coord_x, coord_y FROM inspection_region WHERE "
+        << "coord_x >= " << q.region.min_x << " AND coord_x <= " << q.region.max_x
+        << " AND coord_y >= " << q.region.min_y << " AND coord_y <= " << q.region.max_y;
 
     // Bounding box condtions
-    conditions.push_back("(coord_x >= $1 AND coord_x <= $2 AND coord_y >= $3 AND coord_y <= $4)");
-    params.emplace_back(std::to_string(q.region.min_x), sizeof(double));
-    params.emplace_back(std::to_string(q.region.max_x), sizeof(double));
-    params.emplace_back(std::to_string(q.region.min_y), sizeof(double));
-    params.emplace_back(std::to_string(q.region.max_y), sizeof(double));
-
     // Category condition
     if (q.category) {
-        conditions.push_back("category = $" + std::to_string(params.size() + 1));
-        params.emplace_back(std::to_string(int(*q.category)), sizeof(int));
+        sql << " AND category = " << *q.category;
     }
 
     // One-of-groups condition
     if (q.one_of_groups) {
-        std::ostringstream in;
+        sql << " AND group_id IN (";
         for (size_t i = 0; i < q.one_of_groups->size(); ++i) {
-            if (i > 0) in << ", ";
-            in << "$" << (params.size() + 1);
-            params.emplace_back(std::to_string((*q.one_of_groups)[i]), sizeof(int64_t));
-        }
+            if (i > 0) sql << ",";
+            sql << (*q.one_of_groups)[i];
+       }
+       sql << ")";
     }
-
+    
     // Proper groups condition
     if (q.proper) {
-        auto proper_groups = get_proper_groups();
-        if (proper_groups.empty()) return {}; 
-        std::ostringstream in;
-        for (auto it = proper_groups.begin(); it != proper_groups.end(); ++it) {
-            if (it != proper_groups.begin()) in << ", ";
-            in << *it;
+        auto pg = get_proper_groups();
+        if (pg.empty()) {
+            return {};
         }
-        conditions.push_back("group_id IN (" + in.str() + ")");
-    }
-
-    for (size_t i = 0; i < conditions.size(); ++i) {
-        if (i > 0) sql << " AND ";
-        sql << conditions[i];
+        sql << " AND group_id IN (";
+        for (auto it = pg.begin(); it != pg.end(); ++it) {
+            if (it != pg.begin()) sql << ",";
+            sql << *it;
+        }
+        sql << ")"; 
     }
 
     sql << " ORDER BY coord_y, coord_x";
-
+    
+    std::cout << sql.str() << std::endl;
     pqxx::work txn(conn);
-    auto result = txn.exec_params(sql.str(), params);
+    auto result = txn.exec(sql.str());
 
     std::set<Point2D> points;
     for (const auto& row : result) {
